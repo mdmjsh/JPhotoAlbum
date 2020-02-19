@@ -6,24 +6,14 @@
  */
 package fi.iki.jka;
 
-import java.awt.BorderLayout;
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.FileDialog;
-import java.awt.Graphics2D;
-import java.awt.Image;
-import java.awt.Rectangle;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
-import java.awt.event.FocusAdapter;
-import java.awt.event.FocusEvent;
-import java.awt.event.KeyEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
+import com.drew.metadata.Tag;
+import com.drew.metadata.exif.ExifDirectory;
+
+import javax.swing.*;
+import javax.swing.event.ListSelectionEvent;
+import javax.swing.event.ListSelectionListener;
+import java.awt.*;
+import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.net.URL;
@@ -33,31 +23,10 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.prefs.Preferences;
 
-import javax.swing.AbstractAction;
-import javax.swing.ActionMap;
-import javax.swing.ImageIcon;
-import javax.swing.InputMap;
-import javax.swing.JComponent;
-import javax.swing.JDialog;
-import javax.swing.JFrame;
-import javax.swing.JLabel;
-import javax.swing.JMenuBar;
-import javax.swing.JOptionPane;
-import javax.swing.JScrollPane;
-import javax.swing.JSplitPane;
-import javax.swing.JTextField;
-import javax.swing.JTextPane;
-import javax.swing.KeyStroke;
-import javax.swing.TransferHandler;
-import javax.swing.event.ListSelectionEvent;
-import javax.swing.event.ListSelectionListener;
-
-import com.drew.metadata.Tag;
-import com.drew.metadata.exif.ExifDirectory;
-
 /** Top-level frame containing a BrowsePanel which shows scaled versions
  * images from the given list of images.
  */
+@SuppressWarnings("LossyEncoding")
 public class JPhotoFrame extends JFrame
     implements ListSelectionListener, ActionListener {
 
@@ -82,7 +51,7 @@ public class JPhotoFrame extends JFrame
 
     protected Preferences prefs = null;
     protected String albumFileName = null;
-    protected JPhotoList list = null;
+    protected JPhotoList photoList = null;
     protected JPhotoCollection photos = null;
     protected JLabel statusLine = null;
     protected JTextField textInput = null;
@@ -99,7 +68,8 @@ public class JPhotoFrame extends JFrame
     protected File photoDirectory = null;
     
     protected static HashMap allFrames = new HashMap();
-    
+    public boolean wasShown=false;
+
     protected JPhotoFrame() throws Exception {
         // Do nothing... needed for inheritance !
     }
@@ -134,14 +104,15 @@ public class JPhotoFrame extends JFrame
         // For some reason the list does not get initial viewport resize
         // event, correctly, so we need to give the splitWidth to photolist
         // which can fake it.
-        list = new JPhotoList(photos, splitWidth);
-        transferHandler = new JPhotoTransferHandler(list);
-        list.setTransferHandler(transferHandler);
-        list.setDragEnabled(true);
-        list.addListSelectionListener(this);
-        list.addMouseListener(new MouseListener());
 
-        scrollPane = new JScrollPane(list);
+        photoList = new JPhotoList(photos, splitWidth);
+        transferHandler = new JPhotoTransferHandler(photoList);
+        photoList.setTransferHandler(transferHandler);
+        photoList.setDragEnabled(true);
+        photoList.addListSelectionListener(this);
+        photoList.addMouseListener(new MouseListener());
+
+        scrollPane = new JScrollPane(photoList);
         scrollPane.setFocusable(false);
         scrollPane.addComponentListener(new ResizeAdapter());
         
@@ -177,7 +148,7 @@ public class JPhotoFrame extends JFrame
         getContentPane().add(statusLine, BorderLayout.SOUTH);
         getContentPane().add(textInput, BorderLayout.NORTH);
         //        getContentPane().setBackground(Color.black);
-        list.requestFocus();
+        photoList.requestFocus();
         
         addWindowListener(new closeAdapter());
         setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
@@ -255,7 +226,7 @@ public class JPhotoFrame extends JFrame
         if (cmd.equals(JPhotoMenu.A_NEW) || cmd.equals(JPhotoMenu.A_OPEN)) {
             if (confirmedSave()!=JOptionPane.CANCEL_OPTION) {
                 photos = new JPhotoCollection();
-                list.setPhotoModel(photos);
+                photoList.setPhotoModel(photos);
                 albumFileName = null;
                 editingPhoto = null;
                 if (cmd.equals(JPhotoMenu.A_OPEN)) {
@@ -264,8 +235,8 @@ public class JPhotoFrame extends JFrame
                         try {
                             if (photos.load(file)) {
                                 albumFileName = file;
-                                list.setSelectedIndex(0);
-                                list.recalculateVisibleRows();
+                                photoList.setSelectedIndex(0);
+                                photoList.recalculateVisibleRows();
                                 editingPhoto = null;
                                 setFrameIcon();
                             }
@@ -321,17 +292,17 @@ public class JPhotoFrame extends JFrame
             }
             
             if (files!=null) {
-                int index = list.getSelectedIndex();
+                int index = photoList.getSelectedIndex();
                 if (index<0)
                     index = 0;
                 else
                     index++;
                 
-                list.getPhotoModel().addAll(index, files);
-                list.setSelectedIndex(index-1);
+                photoList.getPhotoModel().addAll(index, files);
+                photoList.setSelectedIndex(index-1);
                 
                 Dimension dim = scrollPane.getViewport().getSize();
-                list.setVisibleBounds(dim);
+                photoList.setVisibleBounds(dim);
             }
         }
         else if (cmd.equals(JPhotoMenu.A_FIND_ORIGINALS)) {           
@@ -348,7 +319,7 @@ public class JPhotoFrame extends JFrame
             }
             
             if (files!=null) {
-                list.getPhotoModel().findOriginals(files);
+                photoList.getPhotoModel().findOriginals(files);
             }
         }
         else if (cmd.startsWith("as ")) {
@@ -476,47 +447,47 @@ public class JPhotoFrame extends JFrame
             exitConfirmedSave();
         }
         else if (cmd.equals(JPhotoMenu.A_CUT)) {
-            int index = list.getSelectedIndex();
-            transferHandler.exportToClipboard(list, getToolkit().getSystemClipboard(),
+            int index = photoList.getSelectedIndex();
+            transferHandler.exportToClipboard(photoList, getToolkit().getSystemClipboard(),
                                               TransferHandler.MOVE);
-            list.setSelectedIndex(index);
+            photoList.setSelectedIndex(index);
         }
         else if (cmd.equals(JPhotoMenu.A_COPY)) {
-            transferHandler.exportToClipboard(list, getToolkit().getSystemClipboard(),
+            transferHandler.exportToClipboard(photoList, getToolkit().getSystemClipboard(),
                                               TransferHandler.COPY);
         }
         else if (cmd.equals(JPhotoMenu.A_PASTE)) {
             transferHandler
-                .importData(list,getToolkit().getSystemClipboard().getContents(list));
+                .importData(photoList,getToolkit().getSystemClipboard().getContents(photoList));
         }
         else if (cmd.equals(JPhotoMenu.A_DELETE)) {
-            int index = list.getSelectedIndex();
-            Object selected[] = list.getSelectedValues();
-            if (list!=null)
+            int index = photoList.getSelectedIndex();
+            Object selected[] = photoList.getSelectedValues();
+            if (photoList !=null)
                 for (int i=0; i<selected.length; i++) {
                     JPhoto photo = (JPhoto)selected[i];
                     photos.remove(photo);
                 }
-            list.setSelectedIndex(index);
+            photoList.setSelectedIndex(index);
         }
         else if (cmd.equals(JPhotoMenu.A_INSERT)) {
-            int index = list.getSelectedIndex();
+            int index = photoList.getSelectedIndex();
             photos.add(index, new JPhoto(photos));
             Dimension dim = scrollPane.getViewport().getSize();
-            list.setVisibleBounds(dim);
-            list.setSelectedIndex(index);
+            photoList.setVisibleBounds(dim);
+            photoList.setSelectedIndex(index);
         }
         else if (cmd.equals(JPhotoMenu.A_INSERT_ALBUM)) {
             String file = askFileName(FILE_EXT, FileDialog.LOAD);
             if (file!=null) {
-                int index = list.getSelectedIndex();
+                int index = photoList.getSelectedIndex();
                 if (index<0)
                     index = photos.size();
                 JPhoto item = new JPhotoAlbumLink(photos, file);
                 photos.add(index, item);
                 Dimension dim = scrollPane.getViewport().getSize();
-                list.setVisibleBounds(dim);
-                list.setSelectedIndex(index);
+                photoList.setVisibleBounds(dim);
+                photoList.setSelectedIndex(index);
             }
         }
         else if (cmd.equals(JPhotoMenu.A_TITLE)) {
@@ -546,7 +517,7 @@ public class JPhotoFrame extends JFrame
         else if (cmd.equals(JPhotoMenu.A_WATERMARK)) {
             String def = photos.getWatermark();
             if (def.equals(""))
-                def = "© "+Calendar.getInstance().get(Calendar.YEAR)+" ";
+                def = "ï¿½ "+Calendar.getInstance().get(Calendar.YEAR)+" ";
             String res = JOptionPane.showInputDialog(this, "Watermark",
                                                      def);
             if (res!=null)
@@ -554,7 +525,7 @@ public class JPhotoFrame extends JFrame
             setTitle();
         }
         else if (cmd.equals(JPhotoMenu.A_COVERPHOTO)) {
-            int index = list.getSelectedIndex();
+            int index = photoList.getSelectedIndex();
             if (index<0)
                 index = 0;
             JPhoto photo = photos.get(index);
@@ -581,8 +552,7 @@ public class JPhotoFrame extends JFrame
         }
         else if (cmd.equals(JPhotoMenu.A_SLIDESHOW)) {
             if (photos.getSize()>0) {
-                JPhotoShow show = new JPhotoShow(photos, 5000, list);
-                show.setVisible(true);
+                startSlideShow(photos, photoList, 5000);
             }
             else
                 JOptionPane.showMessageDialog(this, "No photos to show!",
@@ -596,26 +566,26 @@ public class JPhotoFrame extends JFrame
             JOptionPane.showMessageDialog(this, APP_NAME+" v1.4.5 - Organize and Publish Your Digital Photos.\n"+
                                           "Copyright 2005-2007 Jari Karjala [www.jpkware.com],\n"
                                           +"Tarja Hakala [www.hakalat.net]"
-                                          +" and Zbynek Mužík [zbynek.muzik@email.cz]\n"
+                                          +" and Zbynek Muï¿½ï¿½k [zbynek.muzik@email.cz]\n"
                                           +"This is free software, licenced under the GNU General Public License.",
                                           JPhotoMenu.A_ABOUT, JOptionPane.INFORMATION_MESSAGE);
         }
         else if (cmd.equals(JPhotoMenu.A_BACKGROUND)) {
             Color color = Utils.showColorDialog(this, "Choose Background Color",
-                                                list.getBackground());
+                                                photoList.getBackground());
             
             if (color != null){
-                list.setBackground(color);
+                photoList.setBackground(color);
                 fullViewPanel.setBackground(color);
                 photos.setBackgroundColor(color);
             }
         }
         else if (cmd.equals(JPhotoMenu.A_FOREGROUND)) {
             Color color = Utils.showColorDialog(this, "Choose Foreground Color",
-                                                list.getForeground());
+                                                photoList.getForeground());
             
             if (color != null){
-                list.setForeground(color);
+                photoList.setForeground(color);
                 fullViewPanel.setForeground(color);
                 photos.setForegroundColor(color);
             }
@@ -626,19 +596,24 @@ public class JPhotoFrame extends JFrame
         setTitle();
     }
 
+    void startSlideShow(JPhotoCollection photos, JPhotoList photoList, int interval) {
+            JPhotoShow show = new JPhotoShow(photos, interval, photoList);
+            show.setVisible(true);
+    }
+
     public void insertPhotos(String files[]) {
         if (files!=null) {
-            int index = list.getSelectedIndex();
+            int index = photoList.getSelectedIndex();
             if (index<0)
                 index = 0;
             else
                 index++;
 
-            list.getPhotoModel().addAll(index, files);
-            list.setSelectedIndex(index-1);
+            photoList.getPhotoModel().addAll(index, files);
+            photoList.setSelectedIndex(index-1);
 
             Dimension dim = scrollPane.getViewport().getSize();
-            list.setVisibleBounds(dim);
+            photoList.setVisibleBounds(dim);
         }
     }
     
@@ -666,7 +641,7 @@ public class JPhotoFrame extends JFrame
     
     public void showExif() {
                     
-        JPhoto photo = (JPhoto)list.getSelectedValue();
+        JPhoto photo = (JPhoto) photoList.getSelectedValue();
 
         if (photo == null) {
             System.out.println("No picture selected");
@@ -819,7 +794,7 @@ public class JPhotoFrame extends JFrame
     class ResizeAdapter extends ComponentAdapter {
         public void componentResized(ComponentEvent e) {
             Dimension dim = scrollPane.getViewport().getSize();
-            list.setVisibleBounds(dim);
+            photoList.setVisibleBounds(dim);
         }
     }
 
@@ -856,7 +831,7 @@ public class JPhotoFrame extends JFrame
     }
 
     public void setTitle() {
-        int sel = list.getSelectedIndex();
+        int sel = photoList.getSelectedIndex();
         setTitle((photos.getTitle().equals("") ? getFrameName() : photos.getTitle())
                  + " - "
                  + (editingPhoto!=null ? (sel+1)+"/" : "")
@@ -864,8 +839,8 @@ public class JPhotoFrame extends JFrame
                  + (photos.isDirty() ? " [modified]" : "")
                  + " - "+APP_NAME);
 
-        list.setForeground(photos.getForegroundColor());
-        list.setBackground(photos.getBackgroundColor());
+        photoList.setForeground(photos.getForegroundColor());
+        photoList.setBackground(photos.getBackgroundColor());
     }
     
     public void setFullViewPhoto(JPhoto photo) {
@@ -887,7 +862,7 @@ public class JPhotoFrame extends JFrame
     /** List selection changed
      */
     public void valueChanged(ListSelectionEvent e) {
-        JPhoto photo = (JPhoto)list.getSelectedValue();
+        JPhoto photo = (JPhoto) photoList.getSelectedValue();
         if (e.getValueIsAdjusting())
             return;
         
@@ -896,8 +871,8 @@ public class JPhotoFrame extends JFrame
 
     /** Fullscreen view */
     public void startFullView() {
-        if (list.getSelectedIndex()>=0) {
-            JPhoto photo = (JPhoto)photos.getElementAt(list.getSelectedIndex());
+        if (photoList.getSelectedIndex()>=0) {
+            JPhoto photo = (JPhoto)photos.getElementAt(photoList.getSelectedIndex());
             if (photo.getAlbumLink()!=null) {
                 // It is a link to another album, start new instance
                 String newFile = photo.getFullAlbumLink();
@@ -913,7 +888,7 @@ public class JPhotoFrame extends JFrame
                 }
             }
             else {
-                JPhotoShow show = new JPhotoShow(photos, 0, list);
+                JPhotoShow show = new JPhotoShow(photos, 0, photoList);
                 show.setVisible(true);
             }
         }
@@ -952,7 +927,7 @@ public class JPhotoFrame extends JFrame
         public void mouseClicked(MouseEvent e) {
             super.mouseClicked(e);
             if (e.getClickCount() == 1) {
-                JPhoto photo = (JPhoto)list.getSelectedValue();
+                JPhoto photo = (JPhoto) photoList.getSelectedValue();
                 selectPhoto(photo);
             }
             
@@ -980,7 +955,7 @@ public class JPhotoFrame extends JFrame
             direction = dir;
         }
         public void actionPerformed(ActionEvent ae) {
-            list.moveSelection(direction);
+            photoList.moveSelection(direction);
         }
     }
 
